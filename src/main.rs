@@ -46,6 +46,14 @@ fn probe(sock: &UdpSocket, ip: Ipv4Addr, port: u16) -> Option<String> {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+struct Ports {
+    secret: u16,
+    dragon: u16,
+    ipv6: u16,
+    evil: u16,
+}
+
 fn main() -> Result<(), String> {
     let cfg = parse_args()?;
     let sock = make_socket().map_err(|e| format!("failed to create UDP socket: {e}"))?;
@@ -53,21 +61,30 @@ fn main() -> Result<(), String> {
     // The ONLY thing hard-coded: our group members' RU usernames.
     let usernames = ["joels24", "enok24"];
 
+    let mut ports = Ports::default();
+
     // Identify which port is which from its response to a default message.
-    let mut secret_port: Option<u16> = None;
     for &port in &cfg.ports {
         if let Some(text) = probe(&sock, cfg.ip, port) {
             // "Sacred Elder Cipher" appears only in the S.E.C.R.E.T. reply,
             // so it won't collide with D.R.A.G.O.N., which also says "S.E.C.R.E.T.".
             if text.contains("Sacred Elder Cipher") {
                 println!("port {port} => S.E.C.R.E.T.");
-                secret_port = Some(port);
+                ports.secret = port;
+            } else if text.contains("Dwemer Relay Apparatu") {
+                println!("port {port} => D.R.A.G.O.N.");
+                ports.dragon = port;
+            } else if text.contains("https://en.wikipedia.org/wiki/Evil_bit") {
+                println!("port {port} => EVIL!");
+                ports.evil = port;
+            } else if text.contains("guardian of the secret spell") {
+                println!("port {port} => IPv6");
+                ports.ipv6 = port;
             }
         }
     }
 
-    let sp = secret_port.ok_or("could not find the S.E.C.R.E.T. port")?;
-    let res = secret::solve(&sock, cfg.ip, sp, &usernames)
+    let res = secret::solve(&sock, cfg.ip, ports.secret, &usernames)
         .map_err(|e| format!("S.E.C.R.E.T. handshake failed: {e}"))?;
     println!("\nGOT group_id={} sigil={:02x?}", res.group_id, res.sigil);
 
