@@ -1,4 +1,9 @@
-use std::net::{Ipv4Addr, UdpSocket};
+use std::io;
+use std::mem;
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket};
+use std::time::Duration;
+
+use crate::secret::SecretResult;
 
 /// Accumulates a byte slice into a running checksum sum, treating the bytes
 /// as big-endian 16-bit words. Does not fold carry
@@ -56,7 +61,12 @@ fn udp_checksum(src_ip: [u8; 4], dst_ip: [u8; 4], udp_segment: &[u8]) -> u16 {
     }
 }
 
-fn build_ipv4_header(src_ip: [u8; 4], dst_ip: [u8; 4], udp_segment_len: u16, evil: bool) -> [u8; 20] {
+fn build_ipv4_header(
+    src_ip: [u8; 4],
+    dst_ip: [u8; 4],
+    udp_segment_len: u16,
+    evil: bool,
+) -> [u8; 20] {
     let mut h = [0u8; 20];
     h[0] = 0x45; // version 4, IHL 5 (20-byte header, no options)
     h[1] = 0x00; // DSCP/ECN
@@ -132,4 +142,105 @@ pub fn build_packet(
     packet
 }
 
-pub fn solve(sock: &UdpSocket, ip: Ipv4Addr, port: u16) {}
+/// Sends a raw IPv4/UDP packet built from `packet` (as produced by
+/// `build_packet`) to `dst_ip`. Requires a raw socket, i.e. root or
+/// CAP_NET_RAW: a normal UdpSocket cannot set IP header fields like the
+/// evil bit, since the kernel builds that header itself.
+fn send_raw_packet(dst_ip: Ipv4Addr, packet: &[u8]) -> io::Result<()> {
+    // SAFETY: standard raw-socket FFI sequence (socket, setsockopt, sendto,
+    // close); every return value is checked before use.
+    unsafe {
+        let fd = libc::socket(libc::AF_INET, libc::SOCK_RAW, libc::IPPROTO_RAW);
+        if fd < 0 {
+            return Err(io::Error::last_os_error());
+        }
+
+        // IP_HDRINCL: tells the kernel the IP header is already in our
+        // buffer, so it should send our bytes as-is instead of prepending
+        // its own header.
+        let on: libc::c_int = 1;
+        let ret = libc::setsockopt(
+            fd,
+            libc::IPPROTO_IP,
+            libc::IP_HDRINCL,
+            &on as *const libc::c_int as *const libc::c_void,
+            mem::size_of_val(&on) as libc::socklen_t,
+        );
+        if ret < 0 {
+            let e = io::Error::last_os_error();
+            libc::close(fd);
+            return Err(e);
+        }
+
+        let mut addr: libc::sockaddr_in = mem::zeroed();
+        addr.sin_family = libc::AF_INET as libc::sa_family_t;
+        addr.sin_addr.s_addr = u32::from_ne_bytes(dst_ip.octets());
+
+        let sent = libc::sendto(
+            fd,
+            packet.as_ptr() as *const libc::c_void,
+            packet.len(),
+            0,
+            &addr as *const libc::sockaddr_in as *const libc::sockaddr,
+            mem::size_of::<libc::sockaddr_in>() as libc::socklen_t,
+        );
+
+        libc::close(fd);
+
+        if sent < 0 {
+            return Err(io::Error::last_os_error());
+        }
+    }
+    Ok(())
+}
+
+/// Solve the Evil Bit puzzle
+///
+/// Uses raw libc syscalls to send a UDP packet with the evil bit set, and
+/// returns the hidden port for the puzzle.
+pub fn solve(ip: Ipv4Addr, port: u16, secret: SecretResult) -> io::Result<u16> {
+    // Bind then "connect" (for UDP this is a local route lookup only - it
+    // sends nothing) to learn which local IP/port the OS would use to reach
+    // ip:port, and to receive the reply from that one peer.
+    let recv_sock = UdpSocket::bind("0.0.0.0:0")?;
+    recv_sock.connect(SocketAddrV4::new(ip, port))?;
+    recv_sock.set_read_timeout(Some(Duration::from_secs(2)))?;
+
+    let local_addr = match recv_sock.local_addr()? {
+        SocketAddr::V4(a) => a,
+        SocketAddr::V6(_) => unreachable!("bound to an IPv4 wildcard address"),
+    };
+    let src_ip = *local_addr.ip();
+    let src_port = local_addr.port();
+
+    let mut signed = Vec::with_capacity(5);
+    signed.push(secret.group_id);
+    signed.extend_from_slice(&secret.sigil);
+
+    let packet = build_packet(src_ip.octets(), ip.octets(), src_port, port, &signed, true);
+
+    send_raw_packet(ip, &packet)?;
+
+    let mut buf = [0u8; 2048];
+    let n = recv_sock.recv(&mut buf)?;
+    let reply = buf[..n].to_vec();
+
+    println!(
+        "\n[EVIL] response ({} bytes): {}",
+        reply.len(),
+        String::from_utf8_lossy(&reply),
+    );
+
+    let hidden_port_chars = &reply[reply.len() - 4..reply.len()];
+    let hidden_port_string = String::from_utf8_lossy(hidden_port_chars).to_string();
+    let hidden_port = hidden_port_string.parse::<u16>().map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("invalid hidden port {hidden_port_string}"),
+        )
+    })?;
+
+    println!("\n[EVIL] solved evil port: {hidden_port}");
+
+    Ok(hidden_port)
+}
