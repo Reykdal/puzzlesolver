@@ -15,11 +15,11 @@ text: Greetings, adventurer, from S.E.C.R.E.T. (Sacred Elder Cipher Relay for En
 Here are the rites required to gain access to the secret I guard:
 1. Forge a 32-bit secret number, and keep it safe for later use.
 2. Send me a message beginning with "S.E.C.R.E.T.:", followed by
-   a comma-separated list of the names of every member of your 
+   a comma-separated list of the names of every member of your
    adventuring party as your institution named them,
    and your secret number.
    Your secret number must occupy the final 4 bytes of the message.
-3. I shall answer with a 5-byte missive: the first byte bears your group ID, 
+3. I shall answer with a 5-byte missive: the first byte bears your group ID,
    while the remaining 4 bytes contain a challenge number.
 4. Combine this challenge with your secret number using the XOR spell.
    The result shall be your 4-byte enchanted sigil.
@@ -42,4 +42,3 @@ text: eï¿½!lï¿½!9ï¿½D\Cï¿½ï¿½+×Žï¿½:5Baï¿½ucï¿½_Gï¿½ï¿½@ï¿½7ï¿½ï¿½lï¿
 Respond in the same manner and tell who you are! Send me a 5-byte message with your group id and sigil you got from S.E.C.R.E.T.
 Make sure to wrap the scrolls the same way I did and don't forget to address them accordingly.
 hex : 65 02 a9 21 01 6c 11 ff 21 39 93 1d 0f 44 5c 43 aa 12 9e 2b d7 8e c4 16 3a 35 0e 42 61 9c 75 63 b8 5f 47 0f 05 ad f9 40 c2 37 e8 f5 01 6c 9c 09 49 20 61 6d 20 74 68 65 20 67 75 61 72 64 69 61 6e 20 6f 66 20 74 68 65 20 73 65 63 72 65 74 20 73 70 65 6c 6c 2e 20 54 68 65 20 6c 6f 72 64 73 20 6f 66 20 74 68 65 20 6e 65 74 77 6f 72 6b 20 64 6f 20 6e 6f 74 20 77 61 6e 74 20 75 73 20 74 6f 20 75 73 65 20 74 68 65 73 65 20 6e 65 77 65 72 20 73 63 72 6f 6c 6c 73 20 28 49 50 76 36 29 2c 20 62 75 74 20 49 20 66 6f 75 6e 64 20 61 20 77 61 79 2e 0a 52 65 73 70 6f 6e 64 20 69 6e 20 74 68 65 20 73 61 6d 65 20 6d 61 6e 6e 65 72 20 61 6e 64 20 74 65 6c 6c 20 77 68 6f 20 79 6f 75 20 61 72 65 21 20 53 65 6e 64 20 6d 65 20 61 20 35 2d 62 79 74 65 20 6d 65 73 73 61 67 65 20 77 69 74 68 20 79 6f 75 72 20 67 72 6f 75 70 20 69 64 20 61 6e 64 20 73 69 67 69 6c 20 79 6f 75 20 67 6f 74 20 66 72 6f 6d 20 53 2e 45 2e 43 2e 52 2e 45 2e 54 2e 0a 4d 61 6b 65 20 73 75 72 65 20 74 6f 20 77 72 61 70 20 74 68 65 20 73 63 72 6f 6c 6c 73 20 74 68 65 20 73 61 6d 65 20 77 61 79 20 49 20 64 69 64 20 61 6e 64 20 64 6f 6e 27 74 20 66 6f 72 67 65 74 20 74 6f 20 61 64 64 72 65 73 73 20 74 68 65 6d 20 61 63 63 6f 72 64 69 6e 67 6c 79 2e
-

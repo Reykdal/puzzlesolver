@@ -1,4 +1,5 @@
 //! Usage: ./puzzlesolver <IP> <port1> <port2> <port3> <port4>
+mod evil;
 mod net;
 mod secret;
 
