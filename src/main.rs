@@ -89,14 +89,13 @@ fn main() -> Result<(), String> {
         .map_err(|e| format!("S.E.C.R.E.T. handshake failed: {e}"))?;
     println!("\nGOT group_id={} sigil={:02x?}", res.group_id, res.sigil);
 
-    let evil_port = match evil::solve(cfg.ip, ports.evil, res) {
-        Ok(port) => port,
-        Err(e) => {
-            return Err(format!(
-                "\nevil port failed (raw sockets need root - try sudo): {e}"
-            ));
-        }
-    };
+    let evil_port = evil::solve(cfg.ip, ports.evil, res)
+        .map_err(|e| format!("evil port failed (raw sockets need root - try sudo): {e}"))?;
+
+    println!(
+        "\nGOT port={} phrase={}",
+        evil_port.hidden_port, evil_port.phrase
+    );
 
     Ok(())
 }

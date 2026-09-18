@@ -5,6 +5,11 @@ use std::time::Duration;
 
 use crate::secret::SecretResult;
 
+pub struct EvilResult {
+    pub hidden_port: u16,
+    pub phrase: String,
+}
+
 /// Accumulates a byte slice into a running checksum sum, treating the bytes
 /// as big-endian 16-bit words. Does not fold carry
 fn accumulate(sum: &mut u32, data: &[u8]) {
@@ -198,7 +203,7 @@ fn send_raw_packet(dst_ip: Ipv4Addr, packet: &[u8]) -> io::Result<()> {
 ///
 /// Uses raw libc syscalls to send a UDP packet with the evil bit set, and
 /// returns the hidden port for the puzzle.
-pub fn solve(ip: Ipv4Addr, port: u16, secret: SecretResult) -> io::Result<u16> {
+pub fn solve(ip: Ipv4Addr, port: u16, secret: SecretResult) -> io::Result<EvilResult> {
     // Bind then "connect" (for UDP this is a local route lookup only - it
     // sends nothing) to learn which local IP/port the OS would use to reach
     // ip:port, and to receive the reply from that one peer.
@@ -225,12 +230,6 @@ pub fn solve(ip: Ipv4Addr, port: u16, secret: SecretResult) -> io::Result<u16> {
     let n = recv_sock.recv(&mut buf)?;
     let reply = buf[..n].to_vec();
 
-    println!(
-        "\n[EVIL] response ({} bytes): {}",
-        reply.len(),
-        String::from_utf8_lossy(&reply),
-    );
-
     let hidden_port_chars = &reply[reply.len() - 4..reply.len()];
     let hidden_port_string = String::from_utf8_lossy(hidden_port_chars).to_string();
     let hidden_port = hidden_port_string.parse::<u16>().map_err(|_| {
@@ -242,5 +241,8 @@ pub fn solve(ip: Ipv4Addr, port: u16, secret: SecretResult) -> io::Result<u16> {
 
     println!("\n[EVIL] solved evil port: {hidden_port}");
 
-    Ok(hidden_port)
+    Ok(EvilResult {
+        hidden_port,
+        phrase: String::from_utf8_lossy(&reply).to_string(),
+    })
 }
