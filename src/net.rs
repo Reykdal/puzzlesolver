@@ -3,7 +3,7 @@
 
 use std::io::{self, ErrorKind};
 use std::mem;
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddrV4, UdpSocket};
 use std::time::Duration;
 
 /// Creates a UDP socket bound to an ephemeral local port on all interfaces,
@@ -54,41 +54,67 @@ pub fn dump_response(port: u16, data: &[u8]) {
     println!("\n");
 }
 
-/// Send a raw packet using a C socket
-pub fn send_raw_packet(dst_ip: Ipv4Addr, packet: &[u8]) -> io::Result<()> {
+pub fn send_raw_packet(dst_ip: impl Into<IpAddr>, packet: &[u8]) -> io::Result<()> {
+    let dst_ip = dst_ip.into();
+
     unsafe {
-        let fd = libc::socket(libc::AF_INET, libc::SOCK_RAW, libc::IPPROTO_RAW);
+        let (domain, protocol) = match dst_ip {
+            IpAddr::V4(_) => (libc::AF_INET, libc::IPPROTO_RAW),
+            IpAddr::V6(_) => (libc::AF_INET6, libc::IPPROTO_RAW),
+        };
+
+        let fd = libc::socket(domain, libc::SOCK_RAW, protocol);
         if fd < 0 {
             return Err(io::Error::last_os_error());
         }
 
-        // IP_HDRINCL = We've set our own header
-        let on: libc::c_int = 1;
-        let ret = libc::setsockopt(
-            fd,
-            libc::IPPROTO_IP,
-            libc::IP_HDRINCL,
-            &on as *const libc::c_int as *const libc::c_void,
-            mem::size_of_val(&on) as libc::socklen_t,
-        );
-        if ret < 0 {
-            let e = io::Error::last_os_error();
-            libc::close(fd);
-            return Err(e);
+        // IP_HDRINCL only exists for IPv4 — see note above re: IPv6
+        if dst_ip.is_ipv4() {
+            let on: libc::c_int = 1;
+            let ret = libc::setsockopt(
+                fd,
+                libc::IPPROTO_IP,
+                libc::IP_HDRINCL,
+                &on as *const libc::c_int as *const libc::c_void,
+                mem::size_of_val(&on) as libc::socklen_t,
+            );
+            if ret < 0 {
+                let e = io::Error::last_os_error();
+                libc::close(fd);
+                return Err(e);
+            }
         }
 
-        let mut addr: libc::sockaddr_in = mem::zeroed();
-        addr.sin_family = libc::AF_INET as libc::sa_family_t;
-        addr.sin_addr.s_addr = u32::from_ne_bytes(dst_ip.octets());
+        let sent = match dst_ip {
+            IpAddr::V4(ip) => {
+                let mut addr: libc::sockaddr_in = mem::zeroed();
+                addr.sin_family = libc::AF_INET as libc::sa_family_t;
+                addr.sin_addr.s_addr = u32::from_ne_bytes(ip.octets());
 
-        let sent = libc::sendto(
-            fd,
-            packet.as_ptr() as *const libc::c_void,
-            packet.len(),
-            0,
-            &addr as *const libc::sockaddr_in as *const libc::sockaddr,
-            mem::size_of::<libc::sockaddr_in>() as libc::socklen_t,
-        );
+                libc::sendto(
+                    fd,
+                    packet.as_ptr() as *const libc::c_void,
+                    packet.len(),
+                    0,
+                    &addr as *const libc::sockaddr_in as *const libc::sockaddr,
+                    mem::size_of::<libc::sockaddr_in>() as libc::socklen_t,
+                )
+            }
+            IpAddr::V6(ip) => {
+                let mut addr: libc::sockaddr_in6 = mem::zeroed();
+                addr.sin6_family = libc::AF_INET6 as libc::sa_family_t;
+                addr.sin6_addr.s6_addr = ip.octets();
+
+                libc::sendto(
+                    fd,
+                    packet.as_ptr() as *const libc::c_void,
+                    packet.len(),
+                    0,
+                    &addr as *const libc::sockaddr_in6 as *const libc::sockaddr,
+                    mem::size_of::<libc::sockaddr_in6>() as libc::socklen_t,
+                )
+            }
+        };
 
         libc::close(fd);
 
@@ -219,7 +245,7 @@ pub fn build_ipv6_header(src_ip: Ipv6Addr, dst_ip: Ipv6Addr, udp_segment_len: u1
 
     h[4..6].copy_from_slice(&udp_segment_len.to_be_bytes());
     h[6] = 17; // UDP
-    h[7] = 64;
+    h[7] = 255; // Hop limit
     h[8..24].copy_from_slice(&src_ip.octets());
     h[24..40].copy_from_slice(&dst_ip.octets());
 
