@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use crate::secret::SecretResult;
 
+#[derive(Debug)]
 pub struct EvilResult {
     pub hidden_port: u16,
     pub phrase: String,
@@ -81,9 +82,6 @@ fn build_ipv4_header(
 
     h[4..6].copy_from_slice(&0u16.to_be_bytes()); // identification
 
-    // Flags/fragment-offset is one 16-bit field: top 3 bits are flags
-    // (reserved/evil, DF, MF), low 13 bits are fragment offset. The evil
-    // bit (RFC 3514) is the reserved flag, i.e. the MSB of this field.
     let flags_frag: u16 = if evil { 1 << 15 } else { 0 };
     h[6..8].copy_from_slice(&flags_frag.to_be_bytes());
 
@@ -126,8 +124,6 @@ fn build_udp_header(
     h
 }
 
-/// Assembles a full IPv4+UDP packet: IP header, then UDP header, then payload.
-/// Set `evil` to true to set the RFC 3514 evil bit in the IP header.
 pub fn build_packet(
     src_ip: [u8; 4],
     dst_ip: [u8; 4],
@@ -147,22 +143,14 @@ pub fn build_packet(
     packet
 }
 
-/// Sends a raw IPv4/UDP packet built from `packet` (as produced by
-/// `build_packet`) to `dst_ip`. Requires a raw socket, i.e. root or
-/// CAP_NET_RAW: a normal UdpSocket cannot set IP header fields like the
-/// evil bit, since the kernel builds that header itself.
 fn send_raw_packet(dst_ip: Ipv4Addr, packet: &[u8]) -> io::Result<()> {
-    // SAFETY: standard raw-socket FFI sequence (socket, setsockopt, sendto,
-    // close); every return value is checked before use.
     unsafe {
         let fd = libc::socket(libc::AF_INET, libc::SOCK_RAW, libc::IPPROTO_RAW);
         if fd < 0 {
             return Err(io::Error::last_os_error());
         }
 
-        // IP_HDRINCL: tells the kernel the IP header is already in our
-        // buffer, so it should send our bytes as-is instead of prepending
-        // its own header.
+        // IP_HDRINCL = We've set our own header
         let on: libc::c_int = 1;
         let ret = libc::setsockopt(
             fd,
@@ -204,9 +192,6 @@ fn send_raw_packet(dst_ip: Ipv4Addr, packet: &[u8]) -> io::Result<()> {
 /// Uses raw libc syscalls to send a UDP packet with the evil bit set, and
 /// returns the hidden port for the puzzle.
 pub fn solve(ip: Ipv4Addr, port: u16, secret: SecretResult) -> io::Result<EvilResult> {
-    // Bind then "connect" (for UDP this is a local route lookup only - it
-    // sends nothing) to learn which local IP/port the OS would use to reach
-    // ip:port, and to receive the reply from that one peer.
     let recv_sock = UdpSocket::bind("0.0.0.0:0")?;
     recv_sock.connect(SocketAddrV4::new(ip, port))?;
     recv_sock.set_read_timeout(Some(Duration::from_secs(2)))?;
@@ -224,6 +209,7 @@ pub fn solve(ip: Ipv4Addr, port: u16, secret: SecretResult) -> io::Result<EvilRe
 
     let packet = build_packet(src_ip.octets(), ip.octets(), src_port, port, &signed, true);
 
+    // Send sigil and group ID with evil bit set
     send_raw_packet(ip, &packet)?;
 
     let mut buf = [0u8; 2048];
