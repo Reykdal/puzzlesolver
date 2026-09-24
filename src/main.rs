@@ -1,11 +1,12 @@
 //! Usage: ./puzzlesolver <IP> <port1> <port2> <port3> <port4>
+mod dragon;
 mod evil;
 mod ipv6;
 mod net;
 mod secret;
 
 use net::{make_socket, send_and_recv};
-use std::net::{Ipv4Addr, Ipv6Addr, UdpSocket};
+use std::net::{Ipv4Addr, UdpSocket};
 
 /// Parsed command-line configuration for a run.
 struct Config {
@@ -86,26 +87,35 @@ fn main() -> Result<(), String> {
         }
     }
 
-    let server_ipv6_ip = server_ipv6_ip.ok_or("Could not get IPv6 source ip".to_owned())?;
-    println!("{:?}", server_ipv6_ip);
-
-    let local_ipv6_ip = local_ipv6_ip.ok_or("Could not get IPv6 local ip".to_owned())?;
-    println!("{:?}", local_ipv6_ip);
-
-    let res = secret::solve(&sock, cfg.ip, ports.secret, &usernames)
+    let secret_result = secret::solve(&sock, cfg.ip, ports.secret, &usernames)
         .map_err(|e| format!("S.E.C.R.E.T. handshake failed: {e}"))?;
-    println!("\nGOT group_id={} sigil={:02x?}", res.group_id, res.sigil);
+    println!(
+        "\nGOT group_id={} sigil={:02x?} hidden_port={}",
+        secret_result.group_id, secret_result.sigil, secret_result.hidden_port
+    );
 
-    let evil_port = evil::solve(cfg.ip, ports.evil, &res)
+    let evil_result = evil::solve(cfg.ip, ports.evil, &secret_result)
         .map_err(|e| format!("evil port failed (raw sockets need root - try sudo): {e}"))?;
 
     println!(
         "\nGOT port={} phrase={}",
-        evil_port.hidden_port, evil_port.phrase
+        evil_result.hidden_port, evil_result.phrase
     );
 
-    let phrase = ipv6::solve(cfg.ip, ports.ipv6, &res)
-        .map_err(|e| format!("ipv6 port failed (raw sockets need root - try sudo): {e}"))?;
+    let secret_phrase = ipv6::solve(cfg.ip, ports.ipv6, &secret_result)
+        .map_err(|e| format!("ipv6 challenge failed: {e}"))?;
+
+    println!("GOT phrase={secret_phrase:?}");
+
+    dragon::solve(
+        &sock,
+        &[secret_result.hidden_port, evil_result.hidden_port],
+        &cfg,
+        ports.dragon,
+        &secret_result,
+        &secret_phrase,
+    )
+    .map_err(|e| format!("guardian challenge failed: {e}"))?;
 
     Ok(())
 }
