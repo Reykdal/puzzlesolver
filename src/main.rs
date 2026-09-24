@@ -1,10 +1,11 @@
 //! Usage: ./puzzlesolver <IP> <port1> <port2> <port3> <port4>
 mod evil;
+mod ipv6;
 mod net;
 mod secret;
 
 use net::{make_socket, send_and_recv};
-use std::net::{Ipv4Addr, UdpSocket};
+use std::net::{Ipv4Addr, Ipv6Addr, UdpSocket};
 
 /// Parsed command-line configuration for a run.
 struct Config {
@@ -85,17 +86,26 @@ fn main() -> Result<(), String> {
         }
     }
 
+    let server_ipv6_ip = server_ipv6_ip.ok_or("Could not get IPv6 source ip".to_owned())?;
+    println!("{:?}", server_ipv6_ip);
+
+    let local_ipv6_ip = local_ipv6_ip.ok_or("Could not get IPv6 local ip".to_owned())?;
+    println!("{:?}", local_ipv6_ip);
+
     let res = secret::solve(&sock, cfg.ip, ports.secret, &usernames)
         .map_err(|e| format!("S.E.C.R.E.T. handshake failed: {e}"))?;
     println!("\nGOT group_id={} sigil={:02x?}", res.group_id, res.sigil);
 
-    let evil_port = evil::solve(cfg.ip, ports.evil, res)
+    let evil_port = evil::solve(cfg.ip, ports.evil, &res)
         .map_err(|e| format!("evil port failed (raw sockets need root - try sudo): {e}"))?;
 
     println!(
         "\nGOT port={} phrase={}",
         evil_port.hidden_port, evil_port.phrase
     );
+
+    let phrase = ipv6::solve(cfg.ip, ports.ipv6, &res)
+        .map_err(|e| format!("ipv6 port failed (raw sockets need root - try sudo): {e}"))?;
 
     Ok(())
 }
