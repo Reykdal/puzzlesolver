@@ -238,10 +238,19 @@ pub fn build_udp_header(
     h
 }
 
-pub fn build_ipv6_header(src_ip: Ipv6Addr, dst_ip: Ipv6Addr, udp_segment_len: u16) -> [u8; 40] {
+pub fn build_ipv6_header(
+    src_ip: Ipv6Addr,
+    dst_ip: Ipv6Addr,
+    udp_segment_len: u16,
+    traffic_class: u8,
+    flow_label: u32,
+) -> [u8; 40] {
     let mut h = [0u8; 40];
-    h[0] = 0x60; // IPv6 version
-                 // We leave the traffic class and flow label as 0
+    h[0] = 0x60 | (traffic_class >> 4);
+    h[1] = (traffic_class << 4) | ((flow_label >> 16) as u8 & 0x0f);
+
+    h[2] = (flow_label >> 8) as u8;
+    h[3] = flow_label as u8;
 
     h[4..6].copy_from_slice(&udp_segment_len.to_be_bytes());
     h[6] = 17; // UDP

@@ -38,9 +38,9 @@ fn parse_args() -> Result<Config, String> {
     Ok(Config { ip, ports })
 }
 
-fn probe(sock: &UdpSocket, ip: Ipv4Addr, port: u16) -> Option<(String, Vec<u8>)> {
+fn probe(sock: &UdpSocket, ip: Ipv4Addr, port: u16) -> Option<String> {
     match send_and_recv(sock, ip, port, b"hello!", 4) {
-        Ok(resp) => Some((String::from_utf8_lossy(&resp).to_string(), resp)),
+        Ok(resp) => Some(String::from_utf8_lossy(&resp).to_string()),
         Err(e) => {
             eprintln!("port {port}: no response ({e})");
             None
@@ -64,12 +64,10 @@ fn main() -> Result<(), String> {
     let usernames = ["joels24", "enok24"];
 
     let mut ports = Ports::default();
-    let mut server_ipv6_ip = None;
-    let mut local_ipv6_ip = None;
 
     // Identify which port is which from its response to a default message.
     for &port in &cfg.ports {
-        if let Some((text, resp)) = probe(&sock, cfg.ip, port) {
+        if let Some(text) = probe(&sock, cfg.ip, port) {
             // "Sacred Elder Cipher" appears only in the S.E.C.R.E.T. reply,
             // so it won't collide with D.R.A.G.O.N., which also says "S.E.C.R.E.T.".
             if text.contains("Sacred Elder Cipher") {
@@ -84,16 +82,6 @@ fn main() -> Result<(), String> {
             } else if text.contains("guardian of the secret spell") {
                 println!("port {port} => IPv6");
                 ports.ipv6 = port;
-                let ipv6_header = resp[..40].to_vec();
-                let mut octets = [0; 16];
-
-                octets.copy_from_slice(&ipv6_header[8..24]);
-                let source_ip = Ipv6Addr::from_octets(octets);
-                server_ipv6_ip = Some(source_ip);
-
-                octets.copy_from_slice(&ipv6_header[24..40]);
-                let local_ip = Ipv6Addr::from_octets(octets);
-                local_ipv6_ip = Some(local_ip);
             }
         }
     }
@@ -116,7 +104,7 @@ fn main() -> Result<(), String> {
         evil_port.hidden_port, evil_port.phrase
     );
 
-    let _ = ipv6::solve(server_ipv6_ip, local_ipv6_ip, ports.ipv6, &res)
+    let phrase = ipv6::solve(cfg.ip, ports.ipv6, &res)
         .map_err(|e| format!("ipv6 port failed (raw sockets need root - try sudo): {e}"))?;
 
     Ok(())
