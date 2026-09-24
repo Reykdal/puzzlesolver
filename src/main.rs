@@ -5,7 +5,7 @@ mod net;
 mod secret;
 
 use net::{make_socket, send_and_recv};
-use std::net::{Ipv4Addr, Ipv6Addr, UdpSocket};
+use std::net::{Ipv4Addr, UdpSocket};
 
 /// Parsed command-line configuration for a run.
 struct Config {
@@ -86,15 +86,12 @@ fn main() -> Result<(), String> {
         }
     }
 
-    let server_ipv6_ip = server_ipv6_ip.ok_or("Could not get IPv6 source ip".to_owned())?;
-    println!("{:?}", server_ipv6_ip);
-
-    let local_ipv6_ip = local_ipv6_ip.ok_or("Could not get IPv6 local ip".to_owned())?;
-    println!("{:?}", local_ipv6_ip);
-
     let res = secret::solve(&sock, cfg.ip, ports.secret, &usernames)
         .map_err(|e| format!("S.E.C.R.E.T. handshake failed: {e}"))?;
-    println!("\nGOT group_id={} sigil={:02x?}", res.group_id, res.sigil);
+    println!(
+        "\nGOT group_id={} sigil={:02x?} hidden_port={}",
+        res.group_id, res.sigil, res.hidden_port
+    );
 
     let evil_port = evil::solve(cfg.ip, ports.evil, &res)
         .map_err(|e| format!("evil port failed (raw sockets need root - try sudo): {e}"))?;
@@ -106,6 +103,34 @@ fn main() -> Result<(), String> {
 
     let phrase = ipv6::solve(cfg.ip, ports.ipv6, &res)
         .map_err(|e| format!("ipv6 port failed (raw sockets need root - try sudo): {e}"))?;
+
+    println!("GOT phrase={phrase:?}");
+
+    let ports_string = format!("{},{}", res.hidden_port, evil_port.hidden_port);
+    let resp = send_and_recv(&sock, cfg.ip, ports.dragon, ports_string.as_bytes(), 1)
+        .map_err(|e| format!("send_and_recv failed (dragon): {e}"))?;
+
+    let msg = String::from_utf8_lossy(&resp);
+    println!("GOT msg={msg}");
+
+    let knocks: Vec<_> = msg
+        .trim()
+        .trim_matches(|c| c == '"')
+        .split(',')
+        .map(|s| s.trim().parse::<u16>().expect("invalid port"))
+        .collect();
+
+    let mut code = Vec::with_capacity(5 + phrase.len());
+    code.push(res.group_id);
+    code.extend_from_slice(&res.sigil);
+    code.extend_from_slice(phrase.as_bytes());
+
+    for knock in knocks {
+        let resp = send_and_recv(&sock, cfg.ip, knock, &code, 1)
+            .map_err(|e| format!("send_and_recv failed ({knock}): {e}"))?;
+        let msg = String::from_utf8_lossy(&resp);
+        println!("GOT ({knock}) msg={msg:?}");
+    }
 
     Ok(())
 }

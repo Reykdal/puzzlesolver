@@ -11,6 +11,7 @@ use std::net::{Ipv4Addr, UdpSocket};
 pub struct SecretResult {
     pub group_id: u8,
     pub sigil: [u8; 4],
+    pub hidden_port: u16,
     pub reveal: String, // the hidden secret text (a secret port and/or phrase)
 }
 
@@ -46,7 +47,10 @@ pub fn solve(
     }
     let group_id = reply[0];
     let challenge = [reply[1], reply[2], reply[3], reply[4]];
-    println!("[SECRET] group_id = {}, challenge = {:02x?}", group_id, challenge);
+    println!(
+        "[SECRET] group_id = {}, challenge = {:02x?}",
+        group_id, challenge
+    );
 
     // Step 4: sigil = challenge XOR secret, byte by byte.
     let mut sigil = [0u8; 4];
@@ -65,9 +69,16 @@ pub fn solve(
     let reveal = String::from_utf8_lossy(&reveal_bytes).to_string();
     println!("[SECRET] reveal: {}", reveal);
 
+    let hidden_port_chars = &reveal_bytes[reveal_bytes.len() - 5..reveal_bytes.len() - 1];
+    let hidden_port: u16 = String::from_utf8_lossy(&hidden_port_chars)
+        .to_string()
+        .parse()
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+
     Ok(SecretResult {
         group_id,
         sigil,
+        hidden_port,
         reveal,
     })
 }
