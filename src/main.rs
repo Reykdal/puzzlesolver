@@ -2,7 +2,6 @@
 mod evil;
 mod net;
 mod secret;
-mod guardian;
 
 use net::{make_socket, send_and_recv};
 use std::net::{Ipv4Addr, UdpSocket};
@@ -79,9 +78,9 @@ fn main() -> Result<(), String> {
             } else if text.contains("https://en.wikipedia.org/wiki/Evil_bit") {
                 println!("port {port} => EVIL!");
                 ports.evil = port;
-              else if text.contains("guardian of the secret spell") {
-                println!("port {port} => GUARDIAN");
-                guardian_port = Some(port);
+            } else if text.contains("guardian of the secret spell") {
+                println!("port {port} => IPv6");
+                ports.ipv6 = port;
             }
         }
     }
@@ -97,10 +96,6 @@ fn main() -> Result<(), String> {
         "\nGOT port={} phrase={}",
         evil_port.hidden_port, evil_port.phrase
     );
-
-    let gp = guardian_port.expect("could not find the Guardian port");
-    let guard = guardian::solve(&sock, cfg.ip, gp, &res)?;
-    println!("GUARDIAN reveal: {}", guard.reveal);
 
     Ok(())
 }
